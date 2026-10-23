@@ -1,4 +1,4 @@
-# Document Optimizer 1.0.0
+# Document Optimizer 1.0.1
 
 Windows x64向けのローカル文書軽量化ツール。React / TypeScriptの日本語GUIとTauri / Rustの処理エンジンを使用します。文書をサーバーへ送信しません。
 

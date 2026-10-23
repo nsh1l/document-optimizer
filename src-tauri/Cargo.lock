@@ -671,7 +671,7 @@ dependencies = [
 
 [[package]]
 name = "document_optimizer"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "image",
  "oxipng",
