@@ -15,8 +15,9 @@
         "title": "Document Optimizer",
         "width": 1120,
         "height": 820,
-        "minWidth": 640,
-        "minHeight": 560
+        "minWidth": 560,
+        "minHeight": 420,
+        "dragDropEnabled": true
       }
     ],
     "security": {

@@ -1,6 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { suggestedOutput, runQueue } from '../src/queue.ts';
+import { suggestedOutput, runQueue, filterSupportedPaths } from '../src/queue.ts';
+test('file drops accept supported document extensions case-insensitively', () => {
+  const result = filterSupportedPaths(['C:/docs/a.PPTX', 'C:\\\\資料\\\\b.xlsx', 'C:/docs/readme.txt']);
+  assert.deepEqual(result.accepted, ['C:/docs/a.PPTX', 'C:\\\\資料\\\\b.xlsx']);
+  assert.deepEqual(result.unsupported, ['C:/docs/readme.txt']);
+});
+
 const result = { before: 100, after: 80, saved: 20, unchanged: false };
 const jobs = () => ['a', 'b', 'c'].map(id => ({id, input: `${id}.xlsx`, output: `${id}_optimized.xlsx`, status: 'pending'}));
 test('outputs keep extension and never default to the source', () => {
