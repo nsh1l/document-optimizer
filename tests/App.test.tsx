@@ -1,19 +1,32 @@
 import { afterEach, expect, test, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { readFileSync } from "node:fs";
 import App from "../src/App";
 
 type DropEvent = { payload: { type: string; paths?: string[] } };
+type CloseEvent = { preventDefault: () => void; isPreventDefault: () => boolean };
 const native = vi.hoisted(() => ({
   invoke: vi.fn(),
   open: vi.fn(),
   save: vi.fn(),
+  destroy: vi.fn().mockResolvedValue(undefined),
   dropHandler: null as ((event: DropEvent) => void) | null,
+  closeHandler: null as ((event: CloseEvent) => Promise<void>) | null,
 }));
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: native.invoke }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: native.open, save: native.save }));
 vi.mock("@tauri-apps/api/window", () => ({
-  getCurrentWindow: () => ({ onCloseRequested: async () => () => {} }),
+  getCurrentWindow: () => ({
+    onCloseRequested: async (handler: (event: CloseEvent) => void | Promise<void>) => {
+      native.closeHandler = async event => {
+        await handler(event);
+        if (!event.isPreventDefault()) await native.destroy();
+      };
+      return () => {};
+    },
+    destroy: native.destroy,
+  }),
 }));
 vi.mock("@tauri-apps/api/webview", () => ({
   getCurrentWebview: () => ({
@@ -28,6 +41,60 @@ afterEach(() => {
   cleanup();
   vi.resetAllMocks();
   native.dropHandler = null;
+  native.closeHandler = null;
+  native.destroy.mockResolvedValue(undefined);
+});
+
+test("Tauri's default capability permits the close-request handler to destroy the window", () => {
+  const capability = JSON.parse(readFileSync("src-tauri/capabilities/default.json", "utf8"));
+  expect(capability.permissions).toContain("core:window:allow-destroy");
+});
+
+test("close while idle is not blocked", async () => {
+  native.invoke.mockResolvedValue({ available: false, path: null, version: null });
+  render(<App />);
+  await waitFor(() => expect(native.closeHandler).not.toBeNull());
+
+  let prevented = false;
+  await native.closeHandler?.({
+    preventDefault: () => { prevented = true; },
+    isPreventDefault: () => prevented,
+  });
+
+  expect(prevented).toBe(false);
+  expect(native.destroy).toHaveBeenCalledOnce();
+});
+
+test("close during processing stops after the current file and closes automatically", async () => {
+  native.open.mockResolvedValue(["C:/a.xlsx", "C:/b.xlsx"]);
+  let finishCurrent: ((report: Record<string, unknown>) => void) | undefined;
+  native.invoke.mockImplementation(async (command: string) => {
+    if (command === "pdf_engine") return { available: false, path: null, version: null };
+    return new Promise(resolve => { finishCurrent = resolve; });
+  });
+  render(<App />);
+  await waitFor(() => expect(native.closeHandler).not.toBeNull());
+
+  fireEvent.click(screen.getByRole("button", { name: "ファイルを追加" }));
+  await screen.findByText("a.xlsx");
+  await screen.findByText("b.xlsx");
+  fireEvent.click(screen.getByRole("button", { name: "最適化を開始" }));
+  await waitFor(() => expect(native.invoke.mock.calls.some(([command]) => command === "optimize_document")).toBe(true));
+
+  let prevented = false;
+  await native.closeHandler?.({
+    preventDefault: () => { prevented = true; },
+    isPreventDefault: () => prevented,
+  });
+  expect(prevented).toBe(true);
+  expect(await screen.findByText("現在のファイルが終わった後、ウィンドウを閉じます。")).toBeTruthy();
+
+  finishCurrent?.({
+    output: "C:/a_optimized.xlsx", before: 100, after: 80, saved: 20,
+    optimized: 1, skipped: 0, unchanged: false, messages: [], omittedMessages: 0,
+  });
+  await waitFor(() => expect(native.destroy).toHaveBeenCalledOnce());
+  expect(native.invoke.mock.calls.filter(([command]) => command === "optimize_document")).toHaveLength(1);
 });
 
 test("safe defaults are visible, start is disabled and PDF dependency is honest", async () => {

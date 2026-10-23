@@ -30,6 +30,7 @@ export default function App() {
   const [theme, setTheme] = useState(initialTheme);
   const active = useRef(false);
   const stop = useRef(false);
+  const closeAfterCurrent = useRef(false);
   const knownInputs = useRef(new Set<string>());
 
   useEffect(() => {
@@ -104,7 +105,10 @@ export default function App() {
       .onCloseRequested(event => {
         if (active.current) {
           event.preventDefault();
-          setNotice("処理中は閉じられません。停止を予約して、終了をお待ちください。");
+          closeAfterCurrent.current = true;
+          stop.current = true;
+          setStopping(true);
+          setNotice("現在のファイルが終わった後、ウィンドウを閉じます。");
         }
       })
       .then(unlisten => {
@@ -220,6 +224,14 @@ export default function App() {
       active.current = false;
       setBusy(false);
       setStopping(false);
+      if (closeAfterCurrent.current) {
+        closeAfterCurrent.current = false;
+        try {
+          await getCurrentWindow().destroy();
+        } catch (error) {
+          setNotice(`ウィンドウを閉じられませんでした: ${String(error)}`);
+        }
+      }
     }
   }
 
